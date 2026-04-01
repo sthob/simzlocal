@@ -1,477 +1,334 @@
 "use client"
 
 import { useState } from "react"
-import { Check, User, Home, ImageIcon, CreditCard, Upload } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { communes, propertyTypes } from "@/lib/data"
+import { supabase } from "@/lib/supabase"
 
-const steps = [
-  { id: 1, name: "Compte", icon: User },
-  { id: 2, name: "Logement", icon: Home },
-  { id: 3, name: "Photos", icon: ImageIcon },
-  { id: 4, name: "Paiement", icon: CreditCard },
+const etapes = ["Votre compte", "Votre logement", "Photos", "Paiement"]
+
+const communes = [
+  "Legé", "La Limouzinière", "Machecoul",
+  "Saint-Philbert-de-Grand-Lieu", "Touvois", "Corcoué-sur-Logne"
 ]
 
-const equipmentOptions = [
-  "Cuisine équipée",
-  "Lave-vaisselle",
-  "Lave-linge",
-  "Jardin",
-  "Terrasse",
-  "Balcon",
-  "Garage",
-  "Parking",
-  "Cave",
-  "Piscine",
-  "Animaux acceptés",
-  "Meublé",
+const equipements = [
+  "Jardin", "Balcon / Terrasse", "Garage / Parking",
+  "Cave", "Animaux acceptés", "Charges comprises",
+  "Meublé", "Ascenseur"
 ]
 
 export default function PublierPage() {
-  const [currentStep, setCurrentStep] = useState(1)
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    type: "",
-    commune: "",
+  const router = useRouter()
+  const [etape, setEtape] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [erreur, setErreur] = useState("")
+
+  const [compte, setCompte] = useState({ email: "", password: "" })
+  const [logement, setLogement] = useState({
+    title: "",
+    type: "Maison",
+    commune: "Legé",
     address: "",
     surface: "",
     rent: "",
     rooms: "",
     bedrooms: "",
-    bathrooms: "",
-    availableDate: "",
+    available_date: "",
     description: "",
-    equipment: [] as string[],
-    photos: [] as File[],
+    features: [] as string[],
   })
 
-  const updateFormData = (field: string, value: string | string[] | File[]) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+  const toggleFeature = (f: string) => {
+    setLogement((prev) => ({
+      ...prev,
+      features: prev.features.includes(f)
+        ? prev.features.filter((x) => x !== f)
+        : [...prev.features, f],
+    }))
   }
 
-  const handleEquipmentChange = (equipment: string, checked: boolean) => {
-    if (checked) {
-      updateFormData("equipment", [...formData.equipment, equipment])
-    } else {
-      updateFormData(
-        "equipment",
-        formData.equipment.filter((e) => e !== equipment)
-      )
+  const handleSuivant = async () => {
+    setErreur("")
+
+    if (etape === 0) {
+      if (!compte.email || !compte.password) {
+        setErreur("Veuillez remplir tous les champs.")
+        return
+      }
+      setEtape(1)
+    } else if (etape === 1) {
+      if (!logement.title || !logement.address || !logement.surface || !logement.rent) {
+        setErreur("Veuillez remplir les champs obligatoires.")
+        return
+      }
+      setEtape(2)
+    } else if (etape === 2) {
+      setEtape(3)
+    } else if (etape === 3) {
+      setLoading(true)
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: compte.email,
+          password: compte.password,
+        })
+        if (authError) throw authError
+
+        const { error: listingError } = await supabase.from("listings").insert({
+          title: logement.title,
+          type: logement.type,
+          commune: logement.commune,
+          address: logement.address,
+          surface: parseInt(logement.surface),
+          rent: parseInt(logement.rent),
+          rooms: parseInt(logement.rooms) || 1,
+          bedrooms: parseInt(logement.bedrooms) || 1,
+          bathrooms: 1,
+          description: logement.description,
+          features: logement.features,
+          available: true,
+          available_date: logement.available_date || "Immédiatement",
+          owner_id: authData.user?.id,
+        })
+        if (listingError) throw listingError
+
+        router.push("/annonces")
+      } catch (e: any) {
+        setErreur(e.message ?? "Une erreur est survenue.")
+      } finally {
+        setLoading(false)
+      }
     }
-  }
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      updateFormData("photos", [...formData.photos, ...Array.from(e.target.files)])
-    }
-  }
-
-  const nextStep = () => setCurrentStep((prev) => Math.min(4, prev + 1))
-  const prevStep = () => setCurrentStep((prev) => Math.max(1, prev - 1))
-
-  const handleSubmit = () => {
-    alert("Annonce publiée avec succès ! (simulation)")
   }
 
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
+      <main className="flex-1 px-4 py-12">
+        <div className="mx-auto max-w-2xl">
 
-      <main className="flex-1 bg-muted/30 px-4 py-8">
-        <div className="mx-auto max-w-3xl">
-          <h1 className="mb-2 text-center text-3xl font-bold text-foreground">
-            Publier une annonce
-          </h1>
-          <p className="mb-8 text-center text-muted-foreground">
-            Louez votre bien rapidement dans le Pays de Retz
-          </p>
-
-          {/* Progress Steps */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              {steps.map((step, index) => (
-                <div key={step.id} className="flex items-center">
-                  <div className="flex flex-col items-center">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-full border-2 transition-colors ${
-                        currentStep > step.id
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : currentStep === step.id
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background text-muted-foreground"
-                      }`}
-                    >
-                      {currentStep > step.id ? (
-                        <Check className="h-6 w-6" />
-                      ) : (
-                        <step.icon className="h-6 w-6" />
-                      )}
-                    </div>
-                    <span
-                      className={`mt-2 text-sm font-medium ${
-                        currentStep >= step.id
-                          ? "text-foreground"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {step.name}
-                    </span>
+          <div className="mb-10 flex items-center gap-0">
+            {etapes.map((label, i) => (
+              <div key={i} className="flex flex-1 items-center">
+                <div className="flex flex-col items-center">
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
+                    i < etape ? "bg-green-500 text-white" :
+                    i === etape ? "bg-primary text-white" :
+                    "bg-muted text-muted-foreground"
+                  }`}>
+                    {i < etape ? "✓" : i + 1}
                   </div>
-                  {index < steps.length - 1 && (
-                    <div
-                      className={`mx-2 hidden h-0.5 w-16 sm:block md:w-24 lg:w-32 ${
-                        currentStep > step.id ? "bg-primary" : "bg-border"
-                      }`}
-                    />
-                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">{label}</p>
                 </div>
-              ))}
-            </div>
+                {i < etapes.length - 1 && (
+                  <div className={`mb-4 h-0.5 flex-1 ${i < etape ? "bg-green-500" : "bg-muted"}`} />
+                )}
+              </div>
+            ))}
           </div>
 
-          {/* Form Card */}
-          <Card>
-            <CardContent className="p-6">
-              {/* Step 1: Account */}
-              {currentStep === 1 && (
-                <div className="space-y-6">
-                  <CardHeader className="p-0">
-                    <CardTitle>Créez votre compte</CardTitle>
-                  </CardHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="email">Adresse email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="votre@email.fr"
-                        value={formData.email}
-                        onChange={(e) => updateFormData("email", e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="password">Mot de passe</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={formData.password}
-                        onChange={(e) => updateFormData("password", e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        placeholder="••••••••"
-                        value={formData.confirmPassword}
-                        onChange={(e) => updateFormData("confirmPassword", e.target.value)}
-                      />
-                    </div>
-                  </div>
+          <div className="rounded-xl border bg-card p-8">
+
+            {etape === 0 && (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold">Créez votre compte</h2>
+                <p className="text-sm text-muted-foreground">Votre espace propriétaire pour gérer vos annonces.</p>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Email</label>
+                  <input
+                    type="email"
+                    value={compte.email}
+                    onChange={(e) => setCompte({ ...compte, email: e.target.value })}
+                    placeholder="votre@email.com"
+                    className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
                 </div>
-              )}
-
-              {/* Step 2: Property */}
-              {currentStep === 2 && (
-                <div className="space-y-6">
-                  <CardHeader className="p-0">
-                    <CardTitle>Décrivez votre logement</CardTitle>
-                  </CardHeader>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <Label htmlFor="type">Type de bien</Label>
-                      <Select
-                        value={formData.type}
-                        onValueChange={(value) => updateFormData("type", value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {propertyTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="commune">Commune</Label>
-                      <Select
-                        value={formData.commune}
-                        onValueChange={(value) => updateFormData("commune", value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {communes.map((commune) => (
-                            <SelectItem key={commune} value={commune}>
-                              {commune}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="address">Adresse</Label>
-                    <Input
-                      id="address"
-                      placeholder="12 Rue des Vignes"
-                      value={formData.address}
-                      onChange={(e) => updateFormData("address", e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-                    <div>
-                      <Label htmlFor="surface">Surface (m²)</Label>
-                      <Input
-                        id="surface"
-                        type="number"
-                        placeholder="75"
-                        value={formData.surface}
-                        onChange={(e) => updateFormData("surface", e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="rent">Loyer (€)</Label>
-                      <Input
-                        id="rent"
-                        type="number"
-                        placeholder="650"
-                        value={formData.rent}
-                        onChange={(e) => updateFormData("rent", e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="rooms">Pièces</Label>
-                      <Input
-                        id="rooms"
-                        type="number"
-                        placeholder="3"
-                        value={formData.rooms}
-                        onChange={(e) => updateFormData("rooms", e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="bedrooms">Chambres</Label>
-                      <Input
-                        id="bedrooms"
-                        type="number"
-                        placeholder="2"
-                        value={formData.bedrooms}
-                        onChange={(e) => updateFormData("bedrooms", e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <Label htmlFor="bathrooms">Salles de bain</Label>
-                      <Input
-                        id="bathrooms"
-                        type="number"
-                        placeholder="1"
-                        value={formData.bathrooms}
-                        onChange={(e) => updateFormData("bathrooms", e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="availableDate">Date de disponibilité</Label>
-                      <Input
-                        id="availableDate"
-                        type="date"
-                        value={formData.availableDate}
-                        onChange={(e) => updateFormData("availableDate", e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="Décrivez votre bien en détail..."
-                      className="min-h-[120px]"
-                      value={formData.description}
-                      onChange={(e) => updateFormData("description", e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="mb-3 block">Équipements</Label>
-                    <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-                      {equipmentOptions.map((equipment) => (
-                        <div key={equipment} className="flex items-center gap-2">
-                          <Checkbox
-                            id={`eq-${equipment}`}
-                            checked={formData.equipment.includes(equipment)}
-                            onCheckedChange={(checked) =>
-                              handleEquipmentChange(equipment, checked as boolean)
-                            }
-                          />
-                          <Label
-                            htmlFor={`eq-${equipment}`}
-                            className="cursor-pointer text-sm font-normal"
-                          >
-                            {equipment}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Mot de passe</label>
+                  <input
+                    type="password"
+                    value={compte.password}
+                    onChange={(e) => setCompte({ ...compte, password: e.target.value })}
+                    placeholder="Minimum 6 caractères"
+                    className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
                 </div>
-              )}
-
-              {/* Step 3: Photos */}
-              {currentStep === 3 && (
-                <div className="space-y-6">
-                  <CardHeader className="p-0">
-                    <CardTitle>Ajoutez des photos</CardTitle>
-                  </CardHeader>
-                  <p className="text-sm text-muted-foreground">
-                    Ajoutez des photos de qualité pour attirer plus de locataires
-                  </p>
-                  <div className="rounded-lg border-2 border-dashed border-border bg-muted/30 p-8">
-                    <div className="flex flex-col items-center text-center">
-                      <Upload className="mb-4 h-12 w-12 text-muted-foreground" />
-                      <p className="mb-2 text-sm font-medium text-foreground">
-                        Glissez-déposez vos photos ici
-                      </p>
-                      <p className="mb-4 text-xs text-muted-foreground">
-                        ou cliquez pour parcourir
-                      </p>
-                      <Input
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                        className="hidden"
-                        id="photo-upload"
-                      />
-                      <Button variant="outline" asChild>
-                        <label htmlFor="photo-upload" className="cursor-pointer">
-                          Parcourir les fichiers
-                        </label>
-                      </Button>
-                    </div>
-                  </div>
-                  {formData.photos.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
-                      {formData.photos.map((photo, index) => (
-                        <div
-                          key={index}
-                          className="relative aspect-square rounded-lg bg-muted"
-                        >
-                          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                            {photo.name}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Step 4: Payment */}
-              {currentStep === 4 && (
-                <div className="space-y-6">
-                  <CardHeader className="p-0">
-                    <CardTitle>Finalisez votre annonce</CardTitle>
-                  </CardHeader>
-
-                  {/* Summary */}
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <h3 className="mb-4 font-semibold text-foreground">Récapitulatif</h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Type de bien</span>
-                        <span className="font-medium text-foreground">
-                          {formData.type || "Non renseigné"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Commune</span>
-                        <span className="font-medium text-foreground">
-                          {formData.commune || "Non renseigné"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Loyer</span>
-                        <span className="font-medium text-foreground">
-                          {formData.rent ? `${formData.rent} €/mois` : "Non renseigné"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Surface</span>
-                        <span className="font-medium text-foreground">
-                          {formData.surface ? `${formData.surface} m²` : "Non renseigné"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Photos</span>
-                        <span className="font-medium text-foreground">
-                          {formData.photos.length} photo(s)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Price */}
-                  <div className="rounded-lg border border-primary bg-primary/5 p-6 text-center">
-                    <p className="mb-2 text-sm text-muted-foreground">Frais de publication</p>
-                    <p className="text-4xl font-bold text-primary">9,90 €</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Paiement unique - Annonce visible 60 jours
-                    </p>
-                  </div>
-
-                  <Button onClick={handleSubmit} className="w-full" size="lg">
-                    <CreditCard className="mr-2 h-5 w-5" />
-                    Payer et publier
-                  </Button>
-                  <p className="text-center text-xs text-muted-foreground">
-                    Paiement sécurisé par Stripe
-                  </p>
-                </div>
-              )}
-
-              {/* Navigation Buttons */}
-              <div className="mt-8 flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  onClick={prevStep}
-                  disabled={currentStep === 1}
-                >
-                  Précédent
-                </Button>
-                <Button variant="secondary" className="hidden sm:inline-flex">
-                  Sauvegarder
-                </Button>
-                {currentStep < 4 && <Button onClick={nextStep}>Suivant</Button>}
               </div>
-            </CardContent>
-          </Card>
+            )}
+
+            {etape === 1 && (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold">Votre logement</h2>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Titre de l'annonce *</label>
+                  <input
+                    value={logement.title}
+                    onChange={(e) => setLogement({ ...logement, title: e.target.value })}
+                    placeholder="Ex: Maison T4 avec jardin à Legé"
+                    className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Type de bien</label>
+                    <select
+                      value={logement.type}
+                      onChange={(e) => setLogement({ ...logement, type: e.target.value })}
+                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option>Maison</option>
+                      <option>Appartement</option>
+                      <option>Studio</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Commune</label>
+                    <select
+                      value={logement.commune}
+                      onChange={(e) => setLogement({ ...logement, commune: e.target.value })}
+                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      {communes.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Adresse complète *</label>
+                  <input
+                    value={logement.address}
+                    onChange={(e) => setLogement({ ...logement, address: e.target.value })}
+                    placeholder="12 rue des Acacias"
+                    className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Surface (m²) *</label>
+                    <input
+                      type="number"
+                      value={logement.surface}
+                      onChange={(e) => setLogement({ ...logement, surface: e.target.value })}
+                      placeholder="90"
+                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Loyer mensuel (€) *</label>
+                    <input
+                      type="number"
+                      value={logement.rent}
+                      onChange={(e) => setLogement({ ...logement, rent: e.target.value })}
+                      placeholder="780"
+                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Nombre de pièces</label>
+                    <input
+                      type="number"
+                      value={logement.rooms}
+                      onChange={(e) => setLogement({ ...logement, rooms: e.target.value })}
+                      placeholder="4"
+                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Disponible à partir du</label>
+                    <input
+                      type="date"
+                      value={logement.available_date}
+                      onChange={(e) => setLogement({ ...logement, available_date: e.target.value })}
+                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Description</label>
+                  <textarea
+                    value={logement.description}
+                    onChange={(e) => setLogement({ ...logement, description: e.target.value })}
+                    placeholder="Décrivez votre logement..."
+                    rows={4}
+                    className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium">Équipements</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {equipements.map((eq) => (
+                      <label key={eq} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={logement.features.includes(eq)}
+                          onChange={() => toggleFeature(eq)}
+                          className="rounded border-input"
+                        />
+                        {eq}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {etape === 2 && (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold">Photos</h2>
+                <p className="text-sm text-muted-foreground">Ajoutez des photos de votre logement pour attirer plus de locataires. Cette fonctionnalité sera disponible très prochainement.</p>
+                <div className="flex h-40 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-muted-foreground">
+                  <p className="text-sm">Dépôt de photos — bientôt disponible</p>
+                </div>
+              </div>
+            )}
+
+            {etape === 3 && (
+              <div className="space-y-6">
+                <h2 className="text-xl font-bold">Récapitulatif & Paiement</h2>
+                <div className="rounded-lg bg-muted p-4 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Annonce</span>
+                    <span className="font-medium">{logement.title}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Commune</span>
+                    <span>{logement.commune}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Loyer</span>
+                    <span>{logement.rent} €/mois</span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between font-medium">
+                    <span>Publication (30 jours)</span>
+                    <span className="text-primary">9,90 €</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">En cliquant sur "Publier", votre annonce sera mise en ligne immédiatement. Le paiement Stripe sera intégré prochainement.</p>
+              </div>
+            )}
+
+            {erreur && (
+              <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{erreur}</p>
+            )}
+
+            <div className="mt-8 flex justify-between">
+              {etape > 0 && (
+                <Button variant="outline" onClick={() => setEtape(etape - 1)}>
+                  ← Retour
+                </Button>
+              )}
+              <Button className="ml-auto" onClick={handleSuivant} disabled={loading}>
+                {loading ? "Publication en cours..." :
+                 etape === 3 ? "Publier mon annonce →" : "Étape suivante →"}
+              </Button>
+            </div>
+
+          </div>
         </div>
       </main>
-
       <Footer />
     </div>
   )
